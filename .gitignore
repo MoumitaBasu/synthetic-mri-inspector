@@ -40,6 +40,9 @@ examples/outputs/*.txt
 *.swo
 *~
 
+# Streamlit
+.streamlit/secrets.toml
+
 # OS
 .DS_Store
 Thumbs.db
