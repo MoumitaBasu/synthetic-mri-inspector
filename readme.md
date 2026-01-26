@@ -296,7 +296,7 @@ Inspired by Orbem's innovative work in:
 
 **Project Author**: [Moumita Basu]  
 **GitHub**: [@MoumitaBasu](https://github.com/MoumitaBasu)  
-**LinkedIn**: [My Linkedin]([https://www.linkedin.com/in/moumitabasu97/])
+**LinkedIn**: [My Linkedin](https://www.linkedin.com/in/moumitabasu97/)
 
 ---
 
