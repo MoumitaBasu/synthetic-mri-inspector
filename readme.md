@@ -294,9 +294,9 @@ Inspired by Orbem's innovative work in:
 
 ## 📬 Contact
 
-**Project Author**: [Your Name]  
-**GitHub**: [@yourusername](https://github.com/yourusername)  
-**LinkedIn**: [Your LinkedIn](https://linkedin.com/in/yourprofile)
+**Project Author**: [Moumita Basu]  
+**GitHub**: [@MoumitaBasu](https://github.com/MoumitaBasu)  
+**LinkedIn**: [My Linkedin]([https://www.linkedin.com/in/moumitabasu97/])
 
 ---
 
