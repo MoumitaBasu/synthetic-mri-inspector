@@ -67,10 +67,14 @@ synthetic-mri-inspector/
 │   ├── data_generator.py        # Synthetic MRI image generation
 │   ├── feature_extractor.py     # Interpretable feature extraction
 │   ├── classifier.py            # Rule-based quality classifier
-│   └── visualizer.py            # Comprehensive visualizations
+│   ├── visualizer.py            # Comprehensive visualizations
+│   ├── quality_control_agent.py # 🤖 NEW: Agentic Quality Control
+│   ├── tool_registry.py         # 🔧 NEW: Dynamic Tool Selection
+│   └── llm_reasoning.py         # 🧠 NEW: LLM Reasoning Layer
 └── examples/
     └── outputs/                 # Sample outputs and reports
 ```
+
 
 ---
 
@@ -261,6 +265,93 @@ This project reflects Orbem's core principles:
 - **Data efficiency**: Work with limited samples, scale gracefully
 - **Interpretability**: Transparent reasoning for quality decisions
 - **Practical impact**: Actionable classifications for real-world workflows
+
+---
+
+## 🤖 Agentic Upgrade (v2.0)
+
+The system has been upgraded with three major agentic enhancements:
+
+### Upgrade 1: Quality Control Agent
+
+A dynamic decision-making agent that orchestrates the inspection workflow:
+
+```python
+from src.quality_control_agent import create_agent
+
+# Create and run the agent
+agent = create_agent()
+result = agent.inspect(mri_image, sample_id="sample_001")
+
+# The agent dynamically decides:
+# - Which tools to run
+# - Whether to escalate to deeper analysis
+# - If human review is needed
+print(f"Quality: {result.quality}")
+print(f"Confidence: {result.confidence}%")
+print(f"Human Review Required: {result.requires_human_review}")
+```
+
+**Key Features:**
+- Dynamic tool selection based on intermediate results
+- Confidence-based workflow escalation
+- Automatic human review flagging when uncertain
+- Complete decision trace for auditability
+
+### Upgrade 2: Tool Selection (Agentic Tool Registry)
+
+The agent intelligently selects which analysis tools to run:
+
+```python
+from src.tool_registry import get_default_registry, ToolCategory
+
+registry = get_default_registry()
+
+# List all available tools
+print(registry.get_tools_summary())
+
+# Tools are organized by category:
+# - FEATURE_EXTRACTION: basic_intensity_extractor, symmetry_analyzer, etc.
+# - ANOMALY_DETECTION: basic_anomaly_detector, deep_anomaly_scanner, etc.
+# - QUALITY_ASSESSMENT: quick_quality_check, comprehensive_quality_assessment
+# - REPORTING: generate_summary_report, generate_explanation_report
+```
+
+### Upgrade 3: LLM Reasoning Layer (Optional)
+
+Add AI-powered explanations and recommendations:
+
+```python
+from src.llm_reasoning import create_reasoning_layer
+
+# Create with auto-detection (checks for API keys in environment)
+reasoning = create_reasoning_layer()
+
+# Generate natural language explanation
+explanation = reasoning.explain_decision(
+    features=extracted_features,
+    classification=classification_result,
+    tools_used=['symmetry_analyzer', 'anomaly_detector'],
+    requires_review=False
+)
+print(explanation)
+```
+
+**Supported LLM Providers:**
+- OpenAI (GPT-4, GPT-3.5)
+- Google Gemini
+- Anthropic Claude
+- Local rule-based fallback (no API required)
+
+**Environment Variables:**
+```bash
+# Set one of these for LLM reasoning:
+export OPENAI_API_KEY="your-key"
+# or
+export GOOGLE_API_KEY="your-key"
+# or
+export ANTHROPIC_API_KEY="your-key"
+```
 
 ---
 

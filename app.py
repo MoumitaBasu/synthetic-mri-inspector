@@ -22,6 +22,11 @@ from visualizer import MRIVisualizer
 from image_upload_handler import ImageUploadHandler
 from report_generator import ReportGenerator, BatchReportGenerator
 
+# Agentic modules (Upgrade 1, 2, 3)
+from quality_control_agent import QualityControlAgent, create_agent, AgentState, ConfidenceLevel
+from tool_registry import ToolRegistry, get_default_registry, ToolCategory
+from llm_reasoning import LLMReasoningLayer, create_reasoning_layer, LLMProvider
+
 # Page configuration
 st.set_page_config(
     page_title="Synthetic MRI Inspector",
@@ -260,7 +265,7 @@ with st.sidebar.expander("Tune Thresholds", expanded=False):
     st.session_state.classifier.thresholds['anomaly_severity_max'] = anomaly_max
 
 # Main content
-tab1, tab2, tab3, tab4 = st.tabs(["📊 Single Analysis", "📦 Batch Processing", "📈 Feature Analysis", "ℹ️ About"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📊 Single Analysis", "🤖 Agentic Inspection", "📦 Batch Processing", "📈 Feature Analysis", "ℹ️ About"])
 
 # ===== TAB 1: Single Analysis =====
 with tab1:
@@ -701,9 +706,284 @@ with tab1:
         else:
             st.download_button(label="📋 Download JSON", data=json_report, file_name=fname_json, mime='application/json', use_container_width=True, key="json_btn")
 
-# ===== TAB 2: Batch Processing =====
+# ===== TAB 2: Agentic Inspection (NEW) =====
 with tab2:
+    st.subheader("🤖 Agentic Quality Control Inspection")
+    st.markdown("""
+    **Intelligent, Dynamic Analysis** - The Quality Control Agent dynamically decides which tools to run 
+    based on intermediate results and confidence levels.
+    
+    🎯 **Key Features:**
+    - Dynamic tool selection based on current analysis state
+    - Confidence-based escalation to deeper analysis
+    - Automatic flagging for human review when uncertain
+    - LLM-powered explanations (when API configured)
+    """)
+    
+    st.divider()
+    
+    # Agent Configuration Section
+    with st.expander("⚙️ Agent Configuration", expanded=False):
+        agent_col1, agent_col2 = st.columns(2)
+        
+        with agent_col1:
+            st.markdown("**Confidence Thresholds**")
+            conf_high = st.slider("High Confidence Threshold", 0.5, 1.0, 0.85, 0.05, key="agent_conf_high")
+            conf_medium = st.slider("Medium Confidence Threshold", 0.4, 0.9, 0.70, 0.05, key="agent_conf_medium")
+            conf_human_review = st.slider("Human Review Threshold", 0.3, 0.8, 0.55, 0.05, key="agent_conf_review")
+        
+        with agent_col2:
+            st.markdown("**LLM Reasoning Settings**")
+            use_llm = st.checkbox("Enable LLM Reasoning", value=False, key="agent_use_llm",
+                                  help="Requires API key from OpenAI, Google, or Anthropic")
+            if use_llm:
+                llm_provider_choice = st.selectbox("LLM Provider", 
+                    ["Auto-detect", "OpenAI", "Google Gemini", "Anthropic", "Local (Rule-based)"],
+                    key="agent_llm_provider")
+                
+                if llm_provider_choice != "Auto-detect" and llm_provider_choice != "Local (Rule-based)":
+                    st.info(f"Ensure your {llm_provider_choice} API key is set in environment variables")
+    
+    # Tool Registry Display
+    with st.expander("🔧 Available Tools", expanded=False):
+        tool_registry = get_default_registry()
+        
+        tool_col1, tool_col2 = st.columns(2)
+        
+        with tool_col1:
+            st.markdown("**Feature Extraction Tools**")
+            feature_tools = tool_registry.list_tools(category=ToolCategory.FEATURE_EXTRACTION)
+            for tool in feature_tools:
+                st.markdown(f"• **{tool.name}** (cost: {tool.cost})")
+                st.caption(f"  {tool.description}")
+            
+            st.markdown("**Anomaly Detection Tools**")
+            anomaly_tools = tool_registry.list_tools(category=ToolCategory.ANOMALY_DETECTION)
+            for tool in anomaly_tools:
+                st.markdown(f"• **{tool.name}** (cost: {tool.cost})")
+                st.caption(f"  {tool.description}")
+        
+        with tool_col2:
+            st.markdown("**Quality Assessment Tools**")
+            qa_tools = tool_registry.list_tools(category=ToolCategory.QUALITY_ASSESSMENT)
+            for tool in qa_tools:
+                st.markdown(f"• **{tool.name}** (cost: {tool.cost})")
+                st.caption(f"  {tool.description}")
+            
+            st.markdown("**Reporting Tools**")
+            report_tools = tool_registry.list_tools(category=ToolCategory.REPORTING)
+            for tool in report_tools:
+                st.markdown(f"• **{tool.name}** (cost: {tool.cost})")
+                st.caption(f"  {tool.description}")
+    
+    st.divider()
+    
+    # Run Agent Inspection
+    agent_run_col, agent_status_col = st.columns([1, 1])
+    
+    with agent_run_col:
+        run_agent = st.button("🚀 Run Agentic Inspection", use_container_width=True, type="primary")
+    
+    if run_agent:
+        # Get the current image
+        if 'current_img' in st.session_state and st.session_state.current_img is not None:
+            img = st.session_state.current_img
+        else:
+            # Generate a new sample if no image is available
+            img, _ = st.session_state.generator.generate_sample(seed=42, has_core=force_core, has_defect=force_defect)
+            st.session_state.current_img = img
+        
+        # Configure agent
+        confidence_thresholds = {
+            'high': st.session_state.get('agent_conf_high', 0.85),
+            'medium': st.session_state.get('agent_conf_medium', 0.70),
+            'low': 0.60,
+            'human_review': st.session_state.get('agent_conf_review', 0.55)
+        }
+        
+        # Initialize LLM reasoning if enabled
+        llm_reasoning = None
+        if st.session_state.get('agent_use_llm', False):
+            try:
+                llm_reasoning = create_reasoning_layer()
+                st.sidebar.success(f"✓ LLM Provider: {llm_reasoning.get_provider_name()}")
+            except Exception as e:
+                st.sidebar.warning(f"LLM not available: {e}")
+        
+        # Create and run the agent
+        with st.spinner("🤖 Agent is analyzing..."):
+            agent = create_agent(
+                confidence_thresholds=confidence_thresholds,
+                quality_thresholds=st.session_state.classifier.thresholds,
+                llm_reasoning=llm_reasoning
+            )
+            
+            sample_id = f"inspection_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}"
+            result = agent.inspect(img, sample_id=sample_id)
+        
+        # Store result in session for display
+        st.session_state.agent_result = result
+        st.session_state.agent_instance = agent
+        st.session_state.agent_img = img
+    
+    # Display Results
+    if 'agent_result' in st.session_state and st.session_state.agent_result is not None:
+        result = st.session_state.agent_result
+        agent = st.session_state.agent_instance
+        img = st.session_state.agent_img
+        
+        st.divider()
+        st.subheader("📊 Inspection Results")
+        
+        # Main result display
+        result_col1, result_col2, result_col3 = st.columns(3)
+        
+        with result_col1:
+            # Quality badge
+            quality = result.quality
+            if quality == 'Premium':
+                st.markdown('<div class="premium-badge">✅ PREMIUM</div>', unsafe_allow_html=True)
+            elif quality == 'Standard':
+                st.markdown('<div class="standard-badge">⚠️ STANDARD</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="defective-badge">❌ DEFECTIVE</div>', unsafe_allow_html=True)
+            
+            st.metric("Quality Score", f"{result.quality_score:.0f}/100")
+        
+        with result_col2:
+            st.metric("Confidence", f"{result.confidence:.1f}%")
+            
+            # Confidence level indicator
+            conf_level = agent.get_confidence_level()
+            if conf_level == ConfidenceLevel.HIGH:
+                st.success(f"🟢 {conf_level.value.upper()} Confidence")
+            elif conf_level == ConfidenceLevel.MEDIUM:
+                st.warning(f"🟡 {conf_level.value.upper()} Confidence")
+            else:
+                st.error(f"🔴 {conf_level.value.upper()} Confidence")
+        
+        with result_col3:
+            st.metric("Tools Used", len(result.tools_used))
+            st.metric("Execution Time", f"{result.total_execution_time_ms:.0f}ms")
+        
+        # Human Review Flag
+        if result.requires_human_review:
+            st.warning("⚠️ **Human Review Required** - The agent has flagged this sample for expert review due to uncertainty in the classification.")
+        
+        st.divider()
+        
+        # Decision and Reasoning
+        decision_col, tools_col = st.columns([1.5, 1])
+        
+        with decision_col:
+            st.subheader("📝 Decision & Reasoning")
+            st.info(f"**Decision:** {result.decision}")
+            
+            st.markdown("**Reasoning Steps:**")
+            for i, reason in enumerate(result.reasoning, 1):
+                st.write(f"{i}. {reason}")
+            
+            st.markdown("**Suggested Actions:**")
+            for action in result.suggested_actions:
+                st.write(f"  {action}")
+        
+        with tools_col:
+            st.subheader("🔧 Tools Executed")
+            for tool_name in result.tools_used:
+                st.write(f"✓ {tool_name}")
+        
+        st.divider()
+        
+        # Agent Decision Trace
+        with st.expander("📋 Agent Decision Trace", expanded=False):
+            st.markdown("**Step-by-step agent decisions:**")
+            
+            for i, entry in enumerate(result.execution_history):
+                if 'action' in entry:
+                    st.markdown(f"**Step {i+1}:** [{entry.get('state', 'N/A')}] {entry.get('action', 'N/A')}")
+                    st.caption(f"  Reasoning: {entry.get('reasoning', 'N/A')}")
+                elif 'tool' in entry:
+                    status_icon = "✅" if entry.get('success', False) else "❌"
+                    st.write(f"  {status_icon} Tool: {entry.get('tool')} ({entry.get('execution_time_ms', 0):.1f}ms)")
+            
+            # Export decision trace
+            trace_json = agent.export_decision_trace()
+            st.download_button(
+                label="📥 Download Decision Trace (JSON)",
+                data=trace_json,
+                file_name=f"agent_trace_{result.sample_id}.json",
+                mime="application/json",
+                use_container_width=True
+            )
+        
+        # LLM Explanation (if available)
+        if result.llm_explanation:
+            with st.expander("🧠 LLM Explanation", expanded=True):
+                st.markdown(result.llm_explanation)
+        
+        st.divider()
+        
+        # Visualizations
+        st.subheader("🖼️ Analysis Visualization")
+        viz_col1, viz_col2 = st.columns(2)
+        
+        with viz_col1:
+            # MRI Image
+            fig_agent_img, ax = plt.subplots(figsize=(6, 6))
+            ax.imshow(img, cmap='gray')
+            ax.set_title('MRI Cross-Section', fontweight='bold')
+            ax.axis('off')
+            st.pyplot(fig_agent_img, use_container_width=True)
+            plt.close(fig_agent_img)
+        
+        with viz_col2:
+            # Agent workflow visualization
+            fig_workflow, ax = plt.subplots(figsize=(6, 6))
+            
+            # Create a simple workflow diagram
+            states = ['Initial', 'Basic\nInspection', 'Deeper\nAnalysis', 'Quality\nAssessment', 'Final\nDecision']
+            x_positions = [0, 1, 2, 3, 4]
+            y_positions = [0.5, 0.5, 0.5, 0.5, 0.5]
+            
+            # Determine which states were used
+            states_used = set()
+            for entry in result.execution_history:
+                if 'state' in entry:
+                    states_used.add(entry['state'])
+            
+            # Color mapping
+            state_colors = []
+            for state in ['initial', 'basic_inspection', 'deeper_analysis', 'quality_assessment', 'final_decision']:
+                if state in states_used:
+                    state_colors.append('#2ecc71')  # Green for completed
+                else:
+                    state_colors.append('#95a5a6')  # Gray for skipped
+            
+            # Draw circles for each state
+            for x, y, state, color in zip(x_positions, y_positions, states, state_colors):
+                circle = plt.Circle((x, y), 0.15, color=color, ec='black', linewidth=2)
+                ax.add_patch(circle)
+                ax.text(x, y - 0.3, state, ha='center', va='top', fontsize=8, fontweight='bold')
+            
+            # Draw arrows
+            for i in range(len(x_positions) - 1):
+                ax.annotate('', xy=(x_positions[i+1] - 0.15, y_positions[i+1]), 
+                           xytext=(x_positions[i] + 0.15, y_positions[i]),
+                           arrowprops=dict(arrowstyle='->', color='#34495e', lw=2))
+            
+            ax.set_xlim(-0.5, 4.5)
+            ax.set_ylim(-0.2, 1.2)
+            ax.set_aspect('equal')
+            ax.axis('off')
+            ax.set_title('Agent Workflow', fontweight='bold')
+            
+            st.pyplot(fig_workflow, use_container_width=True)
+            plt.close(fig_workflow)
+
+# ===== TAB 3: Batch Processing =====
+with tab3:
     st.subheader("📦 Batch Processing")
+
     
     if 'process_batch' not in st.session_state:
         st.session_state.process_batch = False
@@ -1129,8 +1409,8 @@ with tab2:
             except Exception as e:
                 st.error(f"Failed to create ZIP: {e}")
 
-# ===== TAB 3: Feature Analysis =====
-with tab3:
+# ===== TAB 4: Feature Analysis =====
+with tab4:
     st.subheader("📈 Feature Deep Dive")
     
     if 'current_img' in st.session_state:
@@ -1441,8 +1721,8 @@ with tab3:
     else:
         st.info("Generate a sample first in the 'Single Analysis' tab to see feature analysis.")
 
-# ===== TAB 4: About =====
-with tab4:
+# ===== TAB 5: About =====
+with tab5:
     st.subheader("About Synthetic MRI Inspector")
     
     st.markdown("""
@@ -1532,14 +1812,39 @@ with tab4:
     
     ```
     src/
-    ├── data_generator.py     # Synthetic MRI generation
-    ├── feature_extractor.py  # Feature computation
-    ├── classifier.py         # Rule-based classification
-    └── visualizer.py         # Professional visualizations
+    ├── data_generator.py         # Synthetic MRI generation
+    ├── feature_extractor.py      # Feature computation
+    ├── classifier.py             # Rule-based classification
+    ├── visualizer.py             # Professional visualizations
+    ├── quality_control_agent.py  # 🤖 NEW: Agentic Quality Control
+    ├── tool_registry.py          # 🔧 NEW: Dynamic Tool Selection
+    └── llm_reasoning.py          # 🧠 NEW: LLM Reasoning Layer
     
-    app.py                     # This Streamlit interface
-    demo.py                    # Command-line demo
+    app.py                         # This Streamlit interface
+    demo.py                        # Command-line demo
     ```
+    
+    ### 🤖 Agentic Upgrade (v2.0)
+    
+    The system has been upgraded with three major enhancements:
+    
+    **1. Quality Control Agent** (Upgrade 1)
+    - Dynamic decision-making based on intermediate results
+    - Confidence-based workflow escalation
+    - Automatic human review flagging
+    - Complete decision trace for auditability
+    
+    **2. Tool Selection** (Upgrade 2)
+    - Agent dynamically selects which analysis tools to run
+    - Cost-aware tool selection
+    - Category-based tool organization
+    - Lazy execution based on analysis needs
+    
+    **3. LLM Reasoning Layer** (Upgrade 3)
+    - Natural language explanations of decisions
+    - Confidence assessment recommendations
+    - Threshold adjustment suggestions
+    - Supports OpenAI, Google Gemini, Anthropic, or local mode
     """)
     
     st.divider()
@@ -1552,6 +1857,13 @@ with tab4:
     - View detailed feature extraction results
     - See classification reasoning
     - Explore comprehensive multi-panel visualizations
+    
+    ### 🤖 Agentic Inspection Tab (NEW)
+    - Run the Quality Control Agent for intelligent analysis
+    - Watch the agent dynamically select analysis tools
+    - View confidence levels and escalation decisions
+    - See LLM-generated explanations (when configured)
+    - Download complete decision traces
     
     ### 📦 Batch Processing Tab
     - Process multiple samples at once
@@ -1571,13 +1883,15 @@ with tab4:
     - Force core or defect features
     - Tune classification thresholds
     - Configure batch size
+    - Configure LLM settings for explanations
     """)
 
 # Footer
 st.divider()
 st.markdown("""
 <div style='text-align: center; color: #666; font-size: 12px; margin-top: 20px;'>
-    <p>Synthetic MRI Inspector • Data-Efficient Quality Inspection</p>
+    <p>Synthetic MRI Inspector v2.0 • Agentic Quality Inspection</p>
+    <p>🤖 Quality Control Agent | 🔧 Dynamic Tool Selection | 🧠 LLM Reasoning</p>
     <p>Python 3.12 | NumPy | SciPy | Scikit-Image | Streamlit</p>
 </div>
 """, unsafe_allow_html=True)
