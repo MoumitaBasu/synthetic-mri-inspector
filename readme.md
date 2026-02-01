@@ -6,6 +6,7 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A demonstration project showcasing **interpretable, data-efficient analysis** of internal structures without requiring massive datasets or black-box deep learning models.
+
 Check Demo here - https://synthetic-mri-inspector.streamlit.app/
 ---
 
