@@ -86,7 +86,7 @@ git clone https://github.com/yourusername/synthetic-mri-inspector.git
 cd synthetic-mri-inspector
 
 # Install dependencies
-pip install -r requirements.txt
+pip install numpy scipy pandas matplotlib seaborn scikit-image Pillow streamlit openai google-generativeai anthropic jupyter ipython
 ```
 
 ### Requirements
