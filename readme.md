@@ -8,6 +8,21 @@
 A demonstration project showcasing **interpretable, data-efficient analysis** of internal structures without requiring massive datasets or black-box deep learning models.
 
 Check Demo here - https://synthetic-mri-inspector.streamlit.app/
+
+## Demo Screenshots
+
+### Main Dashboard
+![Main Dashboard](sample_mri_images/dashboard.png)
+
+### Quality Analysis Report
+![MRI Analysis Report](sample_mri_images/MRI_analysis_report.png)
+
+### Download Report
+![Report](sample_mri_images/download_analysis_report.png)
+
+### Quality Classification
+![Quality Classification](sample_mri_images/quality_classification.png)
+
 ---
 
 ## 🎯 Project Philosophy
